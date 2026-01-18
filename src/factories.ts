@@ -5,7 +5,7 @@
  */
 
 import type { RatingEngineInterface, RatingEngineOptions } from './types.js'
-import { RatingEngine } from './core/RatingEngine.js'
+import { RatingEngine } from './core/Engine.js'
 
 /**
  * Create a rating engine. 
