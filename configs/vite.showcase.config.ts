@@ -13,7 +13,7 @@ export default defineConfig({
 	},
 	resolve: {
 		alias: {
-			'@mikesaintsg/vectorstore': resolve(__dirname, '../src', 'index.ts'),
+			'@mikesaintsg/rater': resolve(__dirname, '../src', 'index.ts'),
 		},
 	},
 })
