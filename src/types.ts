@@ -1,7 +1,7 @@
 /**
  * @mikesaintsg/rater
  *
- * Type definitions for the rater library. 
+ * Type definitions for the rater library.
  * All public types and interfaces are defined here as the SOURCE OF TRUTH.
  */
 
@@ -278,7 +278,7 @@ export interface RaterErrorData extends PackageErrorData<RaterErrorCode> {
 // ============================================================================
 
 /**
- * Rating engine interface - main entry point for rate calculations. 
+ * Rating engine interface - main entry point for rate calculations.
  *
  * Provides factor-based rate calculation with conditions, lookups,
  * ranges, and mathematical operations.
@@ -304,7 +304,7 @@ export interface RatingEngineInterface extends RatingEngineSubscriptions {
 	// ---- Calculation Methods ----
 
 	/**
-	 * Calculate rate for a subject. 
+	 * Calculate rate for a subject.
 	 * @param subject - Subject to rate
 	 * @param groups - Rate factor groups
 	 * @returns Rating result
@@ -326,7 +326,7 @@ export interface RatingEngineInterface extends RatingEngineSubscriptions {
 	): RateFactorResult
 
 	/**
-	 * Calculate rate for a group. 
+	 * Calculate rate for a group.
 	 * @param subject - Subject to rate
 	 * @param group - Rate factor group
 	 * @returns Rate group result
@@ -395,7 +395,7 @@ export interface RatingEngineInterface extends RatingEngineSubscriptions {
 // ============================================================================
 
 /**
- * Factory function for creating rating engine. 
+ * Factory function for creating rating engine.
  *
  * @param options - Optional configuration
  * @returns Rating engine interface
