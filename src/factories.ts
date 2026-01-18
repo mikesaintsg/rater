@@ -8,7 +8,7 @@ import type { RatingEngineInterface, RatingEngineOptions } from './types.js'
 import { RatingEngine } from './core/Engine.js'
 
 /**
- * Create a rating engine. 
+ * Create a rating engine.
  *
  * @param options - Engine configuration options
  * @returns Rating engine instance
@@ -45,7 +45,7 @@ import { RatingEngine } from './core/Engine.js'
  * ```
  */
 export function createRatingEngine(
-	options?: RatingEngineOptions
+	options?: RatingEngineOptions,
 ): RatingEngineInterface {
 	return new RatingEngine(options)
 }

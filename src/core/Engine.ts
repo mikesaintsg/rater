@@ -115,7 +115,7 @@ export class RatingEngine implements RatingEngineInterface {
 
 	rate(
 		subject: RateSubject,
-		groups: readonly RateFactorGroup[]
+		groups: readonly RateFactorGroup[],
 	): RatingResult {
 		this.#assertNotDestroyed()
 
@@ -191,7 +191,7 @@ export class RatingEngine implements RatingEngineInterface {
 
 	rateFactor(
 		subject: RateSubject,
-		factor: RateFactor
+		factor: RateFactor,
 	): RateFactorResult {
 		this. #assertNotDestroyed()
 
@@ -205,23 +205,40 @@ export class RatingEngine implements RatingEngineInterface {
 		}
 
 		// Evaluate conditions
-		let conditionResults: RateConditionResult[] | undefined
 		if (factor.conditions && factor.conditions.length > 0) {
-			conditionResults = factor.conditions.map(c => this.evaluateCondition(subject, c))
+			const conditionResults = factor.conditions.map(c => this.evaluateCondition(subject, c))
 
 			// All conditions must be met
-			const allMet = conditionResults. every(r => r.isMet)
+			const allMet = conditionResults.every(r => r.isMet)
 			if (!allMet) {
 				return {
 					factor,
 					isApplied: false,
-					rate:  0,
+					rate: 0,
 					conditionResults,
 				}
 			}
+
+			// Determine base rate
+			let rate = this.#resolveFactorRate(subject, factor)
+
+			// Apply operation if specified
+			if (factor.operation && factor.operand !== undefined) {
+				rate = this.applyOperation(rate, factor.operation, factor.operand)
+			}
+
+			// Apply factor-level clamping
+			rate = clamp(rate, factor.minimumRate, factor.maximumRate)
+
+			return {
+				factor,
+				isApplied: true,
+				rate,
+				conditionResults,
+			}
 		}
 
-		// Determine base rate
+		// No conditions - Determine base rate
 		let rate = this.#resolveFactorRate(subject, factor)
 
 		// Apply operation if specified
@@ -234,15 +251,14 @@ export class RatingEngine implements RatingEngineInterface {
 
 		return {
 			factor,
-			isApplied:  true,
+			isApplied: true,
 			rate,
-			conditionResults,
 		}
 	}
 
 	rateGroup(
 		subject: RateSubject,
-		group: RateFactorGroup
+		group: RateFactorGroup,
 	): RateGroupResult {
 		this.#assertNotDestroyed()
 
@@ -313,7 +329,7 @@ export class RatingEngine implements RatingEngineInterface {
 
 	evaluateCondition(
 		subject:  RateSubject,
-		condition: RateCondition
+		condition: RateCondition,
 	): RateConditionResult {
 		this.#assertNotDestroyed()
 		return evaluateRateCondition(subject, condition)
@@ -324,14 +340,14 @@ export class RatingEngine implements RatingEngineInterface {
 	applyOperation(
 		rate: number,
 		operation: MathematicalOperation,
-		operand:  number
+		operand:  number,
 	): number {
 		switch (operation) {
 			case 'add':
 				return rate + operand
 			case 'subtract':
 				return rate - operand
-			case 'multiply': 
+			case 'multiply':
 				return rate * operand
 			case 'divide':
 				return operand !== 0 ? rate / operand : rate
@@ -360,7 +376,7 @@ export class RatingEngine implements RatingEngineInterface {
 
 	aggregate(
 		rates: readonly number[],
-		method: AggregationMethod
+		method: AggregationMethod,
 	): number {
 		if (rates.length === 0) {
 			return 0
@@ -368,17 +384,19 @@ export class RatingEngine implements RatingEngineInterface {
 
 		switch (method) {
 			case 'sum':
-				return rates. reduce((sum, rate) => sum + rate, 0)
+				return rates.reduce((sum, rate) => sum + rate, 0)
 			case 'product':
 				return rates.reduce((product, rate) => product * rate, 1)
 			case 'average':
 				return rates.reduce((sum, rate) => sum + rate, 0) / rates.length
 			case 'minimum':
-				return Math.min(... rates)
+				return Math.min(...rates)
 			case 'maximum':
-				return Math.max(... rates)
-			default:
-				return rates[0]
+				return Math.max(...rates)
+			default: {
+				const first = rates[0]
+				return first ?? 0
+			}
 		}
 	}
 

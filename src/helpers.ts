@@ -11,7 +11,7 @@ import type {
 	RateFactorGroup,
 	RaterErrorCode,
 	RaterErrorData,
-} from './types. js'
+} from './types.js'
 
 // ============================================================================
 // Type Guards
@@ -121,7 +121,17 @@ export function toLookupKey(value: unknown): string {
 	if (value === undefined) {
 		return 'undefined'
 	}
-	return String(value)
+	if (typeof value === 'boolean') {
+		return String(value)
+	}
+	if (typeof value === 'bigint') {
+		return String(value)
+	}
+	if (typeof value === 'object') {
+		return JSON.stringify(value)
+	}
+	// For symbols and functions - use a safe string representation
+	return typeof value === 'symbol' ? value.toString() : 'unknown'
 }
 
 // ============================================================================
@@ -129,7 +139,7 @@ export function toLookupKey(value: unknown): string {
 // ============================================================================
 
 /**
- * Round a number to specified decimal places. 
+ * Round a number to specified decimal places.
  * @param value - Number to round
  * @param decimalPlaces - Number of decimal places
  */
@@ -147,7 +157,7 @@ export function roundToDecimalPlaces(value: number, decimalPlaces: number): numb
 export function clamp(
 	value: number,
 	minimum: number | undefined,
-	maximum: number | undefined
+	maximum: number | undefined,
 ): number {
 	let result = value
 	if (minimum !== undefined && result < minimum) {
@@ -170,7 +180,7 @@ export function clamp(
  */
 export function evaluateRateCondition(
 	subject:  Readonly<Record<string, unknown>>,
-	condition: RateCondition
+	condition: RateCondition,
 ): RateConditionResult {
 	const actualValue = getNestedValue(subject, condition. field)
 	let isMet = false
@@ -182,7 +192,7 @@ export function evaluateRateCondition(
 				isMet = actualValue === condition.value
 				break
 
-			case 'notEquals': 
+			case 'notEquals':
 				isMet = actualValue !== condition.value
 				break
 
@@ -222,7 +232,7 @@ export function evaluateRateCondition(
 				break
 			}
 
-			case 'in': 
+			case 'in':
 				if (isArray(condition.value)) {
 					isMet = condition.value.includes(actualValue)
 				}
@@ -263,17 +273,25 @@ export function evaluateRateCondition(
 			}
 
 			default:
-				error = `Unknown operator: ${condition.operator}`
+				error = `Unknown operator: ${String(condition.operator)}`
 		}
 	} catch (err) {
 		error = err instanceof Error ? err.message : 'Evaluation error'
+	}
+
+	if (error !== undefined) {
+		return {
+			condition,
+			isMet,
+			actualValue,
+			error,
+		}
 	}
 
 	return {
 		condition,
 		isMet,
 		actualValue,
-		error,
 	}
 }
 
@@ -282,7 +300,7 @@ export function evaluateRateCondition(
 // ============================================================================
 
 /**
- * Validate a rate factor. 
+ * Validate a rate factor.
  * @param factor - Factor to validate
  */
 export function validateFactor(factor: RateFactor): readonly string[] {
@@ -368,7 +386,7 @@ export function validateGroup(group: RateFactorGroup): readonly string[] {
 // ============================================================================
 
 /**
- * Create a rater error. 
+ * Create a rater error.
  * @param message - Error message
  * @param code - Error code
  * @param data - Additional error data
@@ -376,7 +394,7 @@ export function validateGroup(group: RateFactorGroup): readonly string[] {
 export function createRaterError(
 	message: string,
 	code: RaterErrorCode,
-	data?:  Partial<Omit<RaterErrorData, 'code'>>
+	data?:  Partial<Omit<RaterErrorData, 'code'>>,
 ): Error & { data: RaterErrorData } {
 	const error = new Error(message) as Error & { data: RaterErrorData }
 	error.name = 'RaterError'

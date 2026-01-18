@@ -1,7 +1,7 @@
 /**
  * @mikesaintsg/rater
  *
- * Tests for RatingEngine. 
+ * Tests for RatingEngine.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
@@ -224,7 +224,7 @@ describe('RatingEngine', () => {
 		it('evaluates equals correctly', () => {
 			const result = engine.evaluateCondition(
 				{ status: 'active' },
-				{ field: 'status', operator: 'equals', value: 'active' }
+				{ field: 'status', operator: 'equals', value: 'active' },
 			)
 			expect(result. isMet).toBe(true)
 		})
@@ -232,7 +232,7 @@ describe('RatingEngine', () => {
 		it('evaluates greaterThan correctly', () => {
 			const result = engine.evaluateCondition(
 				{ age: 30 },
-				{ field: 'age', operator:  'greaterThan', value: 25 }
+				{ field: 'age', operator:  'greaterThan', value: 25 },
 			)
 			expect(result.isMet).toBe(true)
 		})
@@ -240,7 +240,7 @@ describe('RatingEngine', () => {
 		it('evaluates between correctly', () => {
 			const result = engine.evaluateCondition(
 				{ score: 75 },
-				{ field: 'score', operator: 'between', value: [50, 100] }
+				{ field: 'score', operator: 'between', value: [50, 100] },
 			)
 			expect(result.isMet).toBe(true)
 		})
@@ -248,7 +248,7 @@ describe('RatingEngine', () => {
 		it('evaluates in correctly', () => {
 			const result = engine.evaluateCondition(
 				{ tier: 'gold' },
-				{ field: 'tier', operator: 'in', value: ['gold', 'platinum'] }
+				{ field: 'tier', operator: 'in', value: ['gold', 'platinum'] },
 			)
 			expect(result.isMet).toBe(true)
 		})
@@ -256,7 +256,7 @@ describe('RatingEngine', () => {
 		it('handles nested fields', () => {
 			const result = engine.evaluateCondition(
 				{ user: { profile: { verified: true } } },
-				{ field: 'user.profile.verified', operator: 'equals', value: true }
+				{ field: 'user.profile.verified', operator: 'equals', value: true },
 			)
 			expect(result.isMet).toBe(true)
 		})
@@ -330,6 +330,366 @@ describe('RatingEngine', () => {
 		it('prevents further operations', () => {
 			engine.destroy()
 			expect(() => engine.rate({}, [])).toThrow()
+		})
+	})
+
+	describe('edge cases', () => {
+		it('handles disabled factors', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [
+						{
+							id: 'enabled',
+							label: 'Enabled',
+							baseRate: 100,
+							enabled: true,
+						},
+						{
+							id: 'disabled',
+							label: 'Disabled',
+							baseRate: 50,
+							enabled: false,
+						},
+					],
+				},
+			]
+
+			const result = engine.rate({}, groups)
+			expect(result.finalRate).toBe(100)
+			expect(result.factorsApplied).toBe(1)
+		})
+
+		it('respects factor priority order', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [
+						{
+							id: 'low',
+							label: 'Low Priority',
+							baseRate: 10,
+							priority: 10,
+						},
+						{
+							id: 'high',
+							label: 'High Priority',
+							baseRate: 20,
+							priority: 0,
+						},
+					],
+				},
+			]
+
+			const result = engine.rate({}, groups)
+			expect(result.allFactorResults[0]?.factor.id).toBe('high')
+			expect(result.allFactorResults[1]?.factor.id).toBe('low')
+		})
+
+		it('applies factor min/max clamping', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [
+						{
+							id: 'clamped',
+							label: 'Clamped',
+							baseRate: 200,
+							minimumRate: 50,
+							maximumRate: 100,
+						},
+					],
+				},
+			]
+
+			const result = engine.rate({}, groups)
+			expect(result.finalRate).toBe(100)
+		})
+
+		it('applies engine min/max clamping', () => {
+			const clampedEngine = createRatingEngine({
+				baseRate: 100,
+				minimumRate: 50,
+				maximumRate: 200,
+			})
+
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [
+						{
+							id: 'high',
+							label: 'High',
+							baseRate: 500,
+						},
+					],
+				},
+			]
+
+			const result = clampedEngine.rate({}, groups)
+			expect(result.finalRate).toBe(200)
+			clampedEngine.destroy()
+		})
+
+		it('uses fieldPath to get rate from subject', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [
+						{
+							id: 'custom',
+							label: 'Custom Rate',
+							fieldPath: 'customRate',
+						},
+					],
+				},
+			]
+
+			const result = engine.rate({ customRate: 75 }, groups)
+			expect(result.finalRate).toBe(75)
+		})
+
+		it('handles nested fieldPath', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [
+						{
+							id: 'nested',
+							label: 'Nested Rate',
+							fieldPath: 'pricing.rate',
+						},
+					],
+				},
+			]
+
+			const result = engine.rate({ pricing: { rate: 80 } }, groups)
+			expect(result.finalRate).toBe(80)
+		})
+
+		it('handles multiple conditions (AND logic)', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [
+						{
+							id: 'multi',
+							label: 'Multi-condition',
+							baseRate: 100,
+							conditions: [
+								{ field: 'age', operator: 'greaterThanOrEqual', value: 18 },
+								{ field: 'isPremium', operator: 'equals', value: true },
+							],
+						},
+					],
+				},
+			]
+
+			// Both conditions met
+			expect(engine.rate({ age: 25, isPremium: true }, groups).finalRate).toBe(100)
+			// Only one condition met
+			expect(engine.rate({ age: 25, isPremium: false }, groups).finalRate).toBe(100) // base rate
+			expect(engine.rate({ age: 15, isPremium: true }, groups).finalRate).toBe(100) // base rate
+		})
+
+		it('handles product aggregation across groups', () => {
+			const productEngine = createRatingEngine({
+				baseRate: 100,
+				groupAggregationMethod: 'product',
+			})
+
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'g1',
+					label: 'Group 1',
+					aggregationMethod: 'sum',
+					factors: [{ id: 'f1', label: 'F1', baseRate: 1.5 }],
+				},
+				{
+					id: 'g2',
+					label: 'Group 2',
+					aggregationMethod: 'sum',
+					factors: [{ id: 'f2', label: 'F2', baseRate: 2 }],
+				},
+			]
+
+			const result = productEngine.rate({}, groups)
+			expect(result.finalRate).toBe(3) // 1.5 * 2
+			productEngine.destroy()
+		})
+
+		it('handles requireAll constraint', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'product',
+					requireAll: true,
+					factors: [
+						{
+							id: 'required1',
+							label: 'Required 1',
+							required: true,
+							baseRate: 1.0,
+							conditions: [{ field: 'check1', operator: 'equals', value: true }],
+						},
+						{
+							id: 'required2',
+							label: 'Required 2',
+							required: true,
+							baseRate: 1.0,
+							conditions: [{ field: 'check2', operator: 'equals', value: true }],
+						},
+					],
+				},
+			]
+
+			// Both required pass
+			const result1 = engine.rate({ check1: true, check2: true }, groups)
+			expect(result1.groupResults[0]?.isApplied).toBe(true)
+
+			// One required fails
+			const result2 = engine.rate({ check1: true, check2: false }, groups)
+			expect(result2.groupResults[0]?.isApplied).toBe(false)
+		})
+
+		it('handles group baseRate', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					baseRate: 50,
+					factors: [{ id: 'f1', label: 'F1', baseRate: 25 }],
+				},
+			]
+
+			const result = engine.rate({}, groups)
+			// sum of baseRate (50) and factor (25) = 75
+			expect(result.finalRate).toBe(75)
+		})
+
+		it('rounds to configured decimal places', () => {
+			const preciseEngine = createRatingEngine({
+				baseRate: 100,
+				decimalPlaces: 3,
+			})
+
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [{ id: 'f1', label: 'F1', baseRate: 33.33333333 }],
+				},
+			]
+
+			const result = preciseEngine.rate({}, groups)
+			expect(result.finalRate).toBe(33.333)
+			preciseEngine.destroy()
+		})
+
+		it('provides breakdown in result', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test Group',
+					aggregationMethod: 'sum',
+					factors: [{ id: 'f1', label: 'Factor 1', baseRate: 100 }],
+				},
+			]
+
+			const result = engine.rate({}, groups)
+			expect(result.breakdown.length).toBeGreaterThan(0)
+			expect(result.breakdown.some(b => b.includes('base rate'))).toBe(true)
+			expect(result.breakdown.some(b => b.includes('Final rate'))).toBe(true)
+		})
+
+		it('handles options hooks', () => {
+			let rateCallbackCalled = false
+			let errorCallbackCalled = false
+
+			const hookEngine = createRatingEngine({
+				baseRate: 100,
+				onRate: () => {
+					rateCallbackCalled = true
+				},
+				onError: () => {
+					errorCallbackCalled = true
+				},
+			})
+
+			hookEngine.rate({}, [])
+			expect(rateCallbackCalled).toBe(true)
+			expect(errorCallbackCalled).toBe(false)
+
+			hookEngine.destroy()
+		})
+
+		it('handles all mathematical operations', () => {
+			const operations = [
+				{ op: 'add' as const, operand: 10, expected: 110 },
+				{ op: 'subtract' as const, operand: 10, expected: 90 },
+				{ op: 'multiply' as const, operand: 2, expected: 200 },
+				{ op: 'divide' as const, operand: 2, expected: 50 },
+				{ op: 'percentage' as const, operand: 10, expected: 110 },
+				{ op: 'percentageOf' as const, operand: 50, expected: 50 },
+				{ op: 'minimum' as const, operand: 80, expected: 80 },
+				{ op: 'maximum' as const, operand: 120, expected: 120 },
+				{ op: 'average' as const, operand: 50, expected: 75 },
+				{ op: 'power' as const, operand: 2, expected: 10000 },
+				{ op: 'round' as const, operand: 0, expected: 100 },
+				{ op: 'ceil' as const, operand: 0, expected: 100 },
+				{ op: 'floor' as const, operand: 0, expected: 100 },
+			]
+
+			for (const { op, operand, expected } of operations) {
+				const result = engine.applyOperation(100, op, operand)
+				expect(result).toBeCloseTo(expected, 10)
+			}
+		})
+
+		it('isContinueOnError returns correct value', () => {
+			expect(engine.isContinueOnError()).toBe(true)
+
+			const strictEngine = createRatingEngine({ continueOnError: false })
+			expect(strictEngine.isContinueOnError()).toBe(false)
+			strictEngine.destroy()
+		})
+
+		it('getMinimumRate and getMaximumRate work correctly', () => {
+			expect(engine.getMinimumRate()).toBe(undefined)
+			expect(engine.getMaximumRate()).toBe(undefined)
+
+			const boundedEngine = createRatingEngine({
+				minimumRate: 10,
+				maximumRate: 200,
+			})
+			expect(boundedEngine.getMinimumRate()).toBe(10)
+			expect(boundedEngine.getMaximumRate()).toBe(200)
+			boundedEngine.destroy()
+		})
+
+		it('getDecimalPlaces returns correct value', () => {
+			expect(engine.getDecimalPlaces()).toBe(2)
+
+			const preciseEngine = createRatingEngine({ decimalPlaces: 4 })
+			expect(preciseEngine.getDecimalPlaces()).toBe(4)
+			preciseEngine.destroy()
 		})
 	})
 })
