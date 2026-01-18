@@ -12,7 +12,7 @@ export default defineConfig({
 	build: {
 		lib: {
 			entry: resolve(__dirname, 'src/index.ts'),
-			name: 'adapters',
+			name: 'rater',
 			fileName: 'index',
 			formats: ['es'],
 		},
@@ -22,7 +22,7 @@ export default defineConfig({
 	},
 	resolve: {
 		alias: {
-			'@mikesaintsg/vectorstore': resolve(__dirname, 'src', 'index.ts'),
+			'@mikesaintsg/rater': resolve(__dirname, 'src', 'index.ts'),
 		},
 	},
 })
