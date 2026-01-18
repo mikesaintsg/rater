@@ -21,7 +21,7 @@ import {
 	validateGroup,
 	createRaterError,
 } from '@mikesaintsg/rater'
-import type { RateCondition, RateFactor, RateFactorGroup } from '@mikesaintsg/rater'
+import type { RateCondition, RateFactor, RateFactorGroup, RaterErrorCode } from '@mikesaintsg/rater'
 
 describe('helpers', () => {
 	describe('isNumber', () => {
@@ -391,6 +391,361 @@ describe('helpers', () => {
 		it('returns false for non-errors', () => {
 			expect(isRaterError('string')).toBe(false)
 			expect(isRaterError(null)).toBe(false)
+		})
+	})
+
+	// ============================================================================
+	// Additional Edge Case Tests
+	// ============================================================================
+
+	describe('isNumber edge cases', () => {
+		it('handles Infinity correctly', () => {
+			expect(isNumber(Infinity)).toBe(true)
+			expect(isNumber(-Infinity)).toBe(true)
+		})
+
+		it('handles -0 correctly', () => {
+			expect(isNumber(-0)).toBe(true)
+		})
+
+		it('handles MAX_VALUE and MIN_VALUE', () => {
+			expect(isNumber(Number.MAX_VALUE)).toBe(true)
+			expect(isNumber(Number.MIN_VALUE)).toBe(true)
+		})
+
+		it('handles MAX_SAFE_INTEGER', () => {
+			expect(isNumber(Number.MAX_SAFE_INTEGER)).toBe(true)
+			expect(isNumber(Number.MIN_SAFE_INTEGER)).toBe(true)
+		})
+	})
+
+	describe('toNumber edge cases', () => {
+		it('handles negative zero', () => {
+			expect(toNumber(-0)).toBe(-0)
+		})
+
+		it('handles scientific notation strings', () => {
+			expect(toNumber('1e5')).toBe(100000)
+			expect(toNumber('1e-5')).toBe(0.00001)
+		})
+
+		it('handles whitespace strings', () => {
+			expect(toNumber('  42  ')).toBe(42)
+		})
+
+		it('handles empty string', () => {
+			expect(toNumber('')).toBe(undefined)
+		})
+
+		it('handles Infinity strings', () => {
+			expect(toNumber('Infinity')).toBe(Infinity)
+			expect(toNumber('-Infinity')).toBe(-Infinity)
+		})
+
+		it('handles hexadecimal strings', () => {
+			// parseFloat doesn't parse hex, so '0xFF' returns 0 (parsing stops at 'x')
+			expect(toNumber('0xFF')).toBe(0)
+		})
+	})
+
+	describe('roundToDecimalPlaces edge cases', () => {
+		it('handles negative decimal places', () => {
+			expect(roundToDecimalPlaces(12345, -2)).toBe(12300)
+		})
+
+		it('handles very large decimal places', () => {
+			expect(roundToDecimalPlaces(3.14159265358979, 10)).toBeCloseTo(3.1415926536, 10)
+		})
+
+		it('handles negative numbers', () => {
+			expect(roundToDecimalPlaces(-3.14159, 2)).toBe(-3.14)
+		})
+
+		it('handles rounding up at 0.5', () => {
+			expect(roundToDecimalPlaces(2.5, 0)).toBe(3)
+			expect(roundToDecimalPlaces(2.45, 1)).toBe(2.5)
+		})
+
+		it('handles very small numbers', () => {
+			expect(roundToDecimalPlaces(0.00001, 4)).toBe(0)
+			expect(roundToDecimalPlaces(0.00005, 4)).toBe(0.0001)
+		})
+	})
+
+	describe('clamp edge cases', () => {
+		it('handles equal min and max', () => {
+			expect(clamp(50, 100, 100)).toBe(100)
+			expect(clamp(150, 100, 100)).toBe(100)
+		})
+
+		it('handles negative values', () => {
+			expect(clamp(-50, -100, -10)).toBe(-50)
+			expect(clamp(-150, -100, -10)).toBe(-100)
+			expect(clamp(0, -100, -10)).toBe(-10)
+		})
+
+		it('handles Infinity', () => {
+			expect(clamp(50, -Infinity, Infinity)).toBe(50)
+			expect(clamp(Infinity, 0, 100)).toBe(100)
+			expect(clamp(-Infinity, 0, 100)).toBe(0)
+		})
+	})
+
+	describe('getNestedValue edge cases', () => {
+		it('handles empty path', () => {
+			expect(getNestedValue({ key: 'value' }, '')).toBe(undefined)
+		})
+
+		it('handles array indices in path', () => {
+			// Current implementation uses isRecord which excludes arrays
+			// Arrays accessed via numeric index won't work with current implementation
+			const obj = { items: [{ name: 'first' }, { name: 'second' }] }
+			// This returns undefined because arrays are not treated as records
+			expect(getNestedValue(obj, 'items.0.name')).toBe(undefined)
+			expect(getNestedValue(obj, 'items.1.name')).toBe(undefined)
+		})
+
+		it('handles paths with special characters', () => {
+			const obj = { 'key-with-dash': 'value' }
+			expect(getNestedValue(obj, 'key-with-dash')).toBe('value')
+		})
+
+		it('handles deeply nested objects', () => {
+			const obj = { a: { b: { c: { d: { e: 'deep' } } } } }
+			expect(getNestedValue(obj, 'a.b.c.d.e')).toBe('deep')
+		})
+
+		it('handles properties with undefined values', () => {
+			const obj = { key: undefined }
+			expect(getNestedValue(obj, 'key')).toBe(undefined)
+		})
+
+		it('handles null values in path', () => {
+			const obj = { a: { b: null } }
+			expect(getNestedValue(obj, 'a.b.c')).toBe(undefined)
+		})
+	})
+
+	describe('toLookupKey edge cases', () => {
+		it('handles symbols', () => {
+			const sym = Symbol('test')
+			expect(toLookupKey(sym)).toBe('Symbol(test)')
+		})
+
+		it('handles bigint', () => {
+			expect(toLookupKey(BigInt(9007199254740991))).toBe('9007199254740991')
+		})
+
+		it('handles arrays', () => {
+			expect(toLookupKey([1, 2, 3])).toBe('[1,2,3]')
+		})
+
+		it('handles nested objects', () => {
+			expect(toLookupKey({ a: { b: 1 } })).toBe('{"a":{"b":1}}')
+		})
+
+		it('handles empty objects', () => {
+			expect(toLookupKey({})).toBe('{}')
+		})
+
+		it('handles empty arrays', () => {
+			expect(toLookupKey([])).toBe('[]')
+		})
+	})
+
+	describe('evaluateRateCondition edge cases', () => {
+		it('handles undefined field values', () => {
+			const condition: RateCondition = { field: 'missing', operator: 'equals', value: undefined }
+			expect(evaluateRateCondition({}, condition).isMet).toBe(true)
+		})
+
+		it('handles null values', () => {
+			const condition: RateCondition = { field: 'value', operator: 'equals', value: null }
+			expect(evaluateRateCondition({ value: null }, condition).isMet).toBe(true)
+		})
+
+		it('handles type coercion in equals', () => {
+			// Strict equality - string "1" is not equal to number 1
+			const condition: RateCondition = { field: 'value', operator: 'equals', value: '1' }
+			expect(evaluateRateCondition({ value: 1 }, condition).isMet).toBe(false)
+		})
+
+		it('handles numeric comparison with string numbers', () => {
+			const condition: RateCondition = { field: 'value', operator: 'greaterThan', value: 10 }
+			expect(evaluateRateCondition({ value: '15' }, condition).isMet).toBe(true)
+		})
+
+		it('handles in operator with empty array', () => {
+			const condition: RateCondition = { field: 'value', operator: 'in', value: [] }
+			expect(evaluateRateCondition({ value: 'test' }, condition).isMet).toBe(false)
+		})
+
+		it('handles notIn operator with empty array', () => {
+			const condition: RateCondition = { field: 'value', operator: 'notIn', value: [] }
+			expect(evaluateRateCondition({ value: 'test' }, condition).isMet).toBe(true)
+		})
+
+		it('handles between with reversed bounds', () => {
+			// The actual value 75 is between 50 and 100, but bounds are [100, 50]
+			const condition: RateCondition = { field: 'score', operator: 'between', value: [100, 50] }
+			// With reversed bounds, 75 is >= 100 (false) AND <= 50 (false), so should be false
+			expect(evaluateRateCondition({ score: 75 }, condition).isMet).toBe(false)
+		})
+
+		it('handles between with equal bounds', () => {
+			const condition: RateCondition = { field: 'score', operator: 'between', value: [50, 50] }
+			expect(evaluateRateCondition({ score: 50 }, condition).isMet).toBe(true)
+			expect(evaluateRateCondition({ score: 51 }, condition).isMet).toBe(false)
+		})
+
+		it('handles non-numeric values in numeric comparisons', () => {
+			const condition: RateCondition = { field: 'value', operator: 'greaterThan', value: 10 }
+			expect(evaluateRateCondition({ value: 'not a number' }, condition).isMet).toBe(false)
+		})
+
+		it('handles nested field in condition', () => {
+			const condition: RateCondition = { field: 'user.age', operator: 'greaterThan', value: 18 }
+			expect(evaluateRateCondition({ user: { age: 25 } }, condition).isMet).toBe(true)
+			expect(evaluateRateCondition({ user: { age: 15 } }, condition).isMet).toBe(false)
+		})
+
+		it('handles in operator with non-array value', () => {
+			const condition: RateCondition = { field: 'tier', operator: 'in', value: 'gold' }
+			// Should not match when value is not an array
+			expect(evaluateRateCondition({ tier: 'gold' }, condition).isMet).toBe(false)
+		})
+
+		it('handles between with non-array value', () => {
+			const condition: RateCondition = { field: 'score', operator: 'between', value: 50 }
+			// Should not match when value is not a proper array
+			expect(evaluateRateCondition({ score: 50 }, condition).isMet).toBe(false)
+		})
+
+		it('handles between with array of wrong length', () => {
+			const condition: RateCondition = { field: 'score', operator: 'between', value: [50] }
+			expect(evaluateRateCondition({ score: 50 }, condition).isMet).toBe(false)
+		})
+
+		it('handles notBetween with non-numeric values in bounds', () => {
+			const condition: RateCondition = { field: 'score', operator: 'notBetween', value: ['a', 'b'] }
+			// With invalid bounds, should default to true (outside range)
+			expect(evaluateRateCondition({ score: 50 }, condition).isMet).toBe(true)
+		})
+	})
+
+	describe('validateFactor edge cases', () => {
+		it('handles factor with all optional fields', () => {
+			const factor: RateFactor = {
+				id: 'test',
+				label: 'Test',
+				baseRate: 100,
+				description: 'Description',
+				enabled: true,
+				required: false,
+				priority: 1,
+				minimumRate: 0,
+				maximumRate: 200,
+			}
+			expect(validateFactor(factor)).toEqual([])
+		})
+
+		it('handles factor with both lookupTable and rangeTable (valid as rate source)', () => {
+			const factor = {
+				id: 'test',
+				label: 'Test',
+				lookupTable: { field: 'tier', values: { gold: 1 } },
+				rangeTable: { field: 'age', ranges: [{ minimum: 0, rate: 1 }] },
+			} as RateFactor
+			// Having multiple rate sources is allowed - first found is used
+			expect(validateFactor(factor)).toEqual([])
+		})
+
+		it('handles factor with fieldPath as rate source', () => {
+			const factor: RateFactor = {
+				id: 'test',
+				label: 'Test',
+				fieldPath: 'customRate',
+			}
+			expect(validateFactor(factor)).toEqual([])
+		})
+
+		it('handles factor with whitespace-only id', () => {
+			const factor = { id: '   ', label: 'Test', baseRate: 100 } as RateFactor
+			const errors = validateFactor(factor)
+			expect(errors.some(e => e.includes('id'))).toBe(true)
+		})
+
+		it('handles factor with whitespace-only label', () => {
+			const factor = { id: 'test', label: '   ', baseRate: 100 } as RateFactor
+			const errors = validateFactor(factor)
+			expect(errors.some(e => e.includes('label'))).toBe(true)
+		})
+	})
+
+	describe('validateGroup edge cases', () => {
+		it('handles group with multiple invalid factors', () => {
+			const group = {
+				id: 'test',
+				label: 'Test',
+				aggregationMethod: 'sum',
+				factors: [
+					{ id: '', label: 'F1', baseRate: 100 },
+					{ id: 'f2', label: '', baseRate: 100 },
+					{ id: 'f3', label: 'F3' }, // missing rate source
+				],
+			} as RateFactorGroup
+			const errors = validateGroup(group)
+			expect(errors.length).toBeGreaterThanOrEqual(3)
+		})
+
+		it('handles group with all valid properties', () => {
+			const group: RateFactorGroup = {
+				id: 'test',
+				label: 'Test',
+				aggregationMethod: 'product',
+				baseRate: 1.0,
+				requireAll: true,
+				factors: [
+					{ id: 'f1', label: 'Factor 1', baseRate: 1.5 },
+					{ id: 'f2', label: 'Factor 2', baseRate: 0.9 },
+				],
+			}
+			expect(validateGroup(group)).toEqual([])
+		})
+	})
+
+	describe('createRaterError edge cases', () => {
+		it('creates error with all optional data', () => {
+			const error = createRaterError('Test error', 'CALCULATION_FAILED', {
+				factorId: 'f1',
+				groupId: 'g1',
+				field: 'age',
+			})
+			expect(error.data.factorId).toBe('f1')
+			expect(error.data.groupId).toBe('g1')
+			expect(error.data.field).toBe('age')
+		})
+
+		it('creates error without optional data', () => {
+			const error = createRaterError('Test error', 'UNKNOWN')
+			expect(error.data.factorId).toBe(undefined)
+			expect(error.data.groupId).toBe(undefined)
+		})
+
+		it('preserves error code in data', () => {
+			const codes: RaterErrorCode[] = [
+				'INVALID_CONDITION',
+				'INVALID_FACTOR',
+				'INVALID_GROUP',
+				'EVALUATION_FAILED',
+				'CALCULATION_FAILED',
+				'VALIDATION_FAILED',
+				'UNKNOWN',
+			]
+			for (const code of codes) {
+				const error = createRaterError('Test', code)
+				expect(error.data.code).toBe(code)
+			}
 		})
 	})
 })

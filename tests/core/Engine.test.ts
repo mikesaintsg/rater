@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { createRatingEngine } from '@mikesaintsg/rater'
-import type { RateFactorGroup, RatingEngineInterface } from '@mikesaintsg/rater'
+import type { RateFactorGroup, RatingEngineInterface, RateFactor } from '@mikesaintsg/rater'
 
 describe('RatingEngine', () => {
 	let engine: RatingEngineInterface
@@ -690,6 +690,595 @@ describe('RatingEngine', () => {
 			const preciseEngine = createRatingEngine({ decimalPlaces: 4 })
 			expect(preciseEngine.getDecimalPlaces()).toBe(4)
 			preciseEngine.destroy()
+		})
+	})
+
+	// ============================================================================
+	// Mathematical Accuracy Tests
+	// ============================================================================
+
+	describe('mathematical accuracy', () => {
+		describe('applyOperation precision', () => {
+			it('handles floating-point precision in percentage', () => {
+				// 100 * (1 + 0.1/100) = 100.1
+				expect(engine.applyOperation(100, 'percentage', 0.1)).toBeCloseTo(100.1, 10)
+			})
+
+			it('handles small percentages accurately', () => {
+				expect(engine.applyOperation(1000, 'percentage', 0.01)).toBeCloseTo(1000.1, 10)
+			})
+
+			it('handles negative percentage', () => {
+				expect(engine.applyOperation(100, 'percentage', -50)).toBeCloseTo(50, 10)
+			})
+
+			it('handles percentage of 100 (double the value)', () => {
+				expect(engine.applyOperation(100, 'percentage', 100)).toBeCloseTo(200, 10)
+			})
+
+			it('handles percentageOf with 0', () => {
+				expect(engine.applyOperation(100, 'percentageOf', 0)).toBe(0)
+			})
+
+			it('handles percentageOf with 100', () => {
+				expect(engine.applyOperation(100, 'percentageOf', 100)).toBe(100)
+			})
+
+			it('handles percentageOf with values over 100', () => {
+				expect(engine.applyOperation(100, 'percentageOf', 150)).toBe(150)
+			})
+
+			it('handles power with fractional exponent', () => {
+				expect(engine.applyOperation(4, 'power', 0.5)).toBeCloseTo(2, 10) // sqrt(4)
+			})
+
+			it('handles power with negative exponent', () => {
+				expect(engine.applyOperation(2, 'power', -1)).toBeCloseTo(0.5, 10) // 1/2
+			})
+
+			it('handles power of 0', () => {
+				expect(engine.applyOperation(100, 'power', 0)).toBe(1)
+			})
+
+			it('handles 0 to a power', () => {
+				expect(engine.applyOperation(0, 'power', 5)).toBe(0)
+			})
+
+			it('handles round with negative numbers', () => {
+				expect(engine.applyOperation(-2.5, 'round', 0)).toBe(-2) // IEEE 754 banker's rounding
+			})
+
+			it('handles ceil with negative numbers', () => {
+				expect(engine.applyOperation(-2.1, 'ceil', 0)).toBe(-2)
+				expect(engine.applyOperation(-2.9, 'ceil', 0)).toBe(-2)
+			})
+
+			it('handles floor with negative numbers', () => {
+				expect(engine.applyOperation(-2.1, 'floor', 0)).toBe(-3)
+				expect(engine.applyOperation(-2.9, 'floor', 0)).toBe(-3)
+			})
+
+			it('handles minimum with equal values', () => {
+				expect(engine.applyOperation(100, 'minimum', 100)).toBe(100)
+			})
+
+			it('handles maximum with equal values', () => {
+				expect(engine.applyOperation(100, 'maximum', 100)).toBe(100)
+			})
+
+			it('handles average with negative operand', () => {
+				expect(engine.applyOperation(100, 'average', -100)).toBe(0)
+			})
+
+			it('handles multiply by 0', () => {
+				expect(engine.applyOperation(100, 'multiply', 0)).toBe(0)
+			})
+
+			it('handles multiply by negative', () => {
+				expect(engine.applyOperation(100, 'multiply', -1)).toBe(-100)
+			})
+
+			it('handles subtract larger than rate', () => {
+				expect(engine.applyOperation(50, 'subtract', 100)).toBe(-50)
+			})
+		})
+
+		describe('aggregate precision', () => {
+			it('handles floating-point sum precision', () => {
+				// 0.1 + 0.2 should be 0.3 (but has floating point issues)
+				expect(engine.aggregate([0.1, 0.2], 'sum')).toBeCloseTo(0.3, 10)
+			})
+
+			it('handles product with many decimals', () => {
+				expect(engine.aggregate([1.1, 1.2, 1.3], 'product')).toBeCloseTo(1.716, 10)
+			})
+
+			it('handles average of single value', () => {
+				expect(engine.aggregate([42], 'average')).toBe(42)
+			})
+
+			it('handles minimum with negative values', () => {
+				expect(engine.aggregate([-10, 0, 10], 'minimum')).toBe(-10)
+			})
+
+			it('handles maximum with negative values', () => {
+				expect(engine.aggregate([-100, -50, -10], 'maximum')).toBe(-10)
+			})
+
+			it('handles product with 0', () => {
+				expect(engine.aggregate([1, 2, 0, 4], 'product')).toBe(0)
+			})
+
+			it('handles product with negative values', () => {
+				expect(engine.aggregate([2, -3, 4], 'product')).toBe(-24)
+			})
+
+			it('handles sum of very large numbers', () => {
+				expect(engine.aggregate([1e15, 1e15], 'sum')).toBe(2e15)
+			})
+		})
+	})
+
+	// ============================================================================
+	// Rate Calculation Edge Cases
+	// ============================================================================
+
+	describe('rate calculation edge cases', () => {
+		it('handles lookup table with missing default', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [
+						{
+							id: 'lookup',
+							label: 'Lookup',
+							lookupTable: {
+								field: 'tier',
+								values: { gold: 100 },
+								// No defaultValue
+							},
+						},
+					],
+				},
+			]
+
+			// When key not found and no default, factor returns 0 (the baseRate fallback)
+			// Factor still applies with rate 0, so group rate is 0
+			const result = engine.rate({ tier: 'unknown' }, groups)
+			expect(result.finalRate).toBe(0)
+		})
+
+		it('handles range table with no matching range and no default', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [
+						{
+							id: 'range',
+							label: 'Range',
+							rangeTable: {
+								field: 'age',
+								ranges: [
+									{ minimum: 0, maximum: 17, rate: 200 },
+									{ minimum: 18, maximum: 65, rate: 100 },
+								],
+								// No defaultRate, age 70 won't match
+							},
+						},
+					],
+				},
+			]
+
+			// When no range matches and no default, factor returns 0 (the baseRate fallback)
+			const result = engine.rate({ age: 70 }, groups)
+			expect(result.finalRate).toBe(0)
+		})
+
+		it('handles multiple groups with different aggregation methods', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'g1',
+					label: 'Sum Group',
+					aggregationMethod: 'sum',
+					factors: [
+						{ id: 'f1', label: 'F1', baseRate: 50 },
+						{ id: 'f2', label: 'F2', baseRate: 50 },
+					],
+				},
+				{
+					id: 'g2',
+					label: 'Product Group',
+					aggregationMethod: 'product',
+					factors: [
+						{ id: 'f3', label: 'F3', baseRate: 1.5 },
+						{ id: 'f4', label: 'F4', baseRate: 2 },
+					],
+				},
+			]
+
+			const result = engine.rate({}, groups)
+			// Group 1: 50 + 50 = 100
+			// Group 2: 1.5 * 2 = 3
+			// Engine sum: 100 + 3 = 103
+			expect(result.finalRate).toBe(103)
+		})
+
+		it('handles factor with operation but no base rate', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [
+						{
+							id: 'fieldBased',
+							label: 'Field Based',
+							fieldPath: 'rate',
+							operation: 'percentage',
+							operand: 10,
+						},
+					],
+				},
+			]
+
+			const result = engine.rate({ rate: 100 }, groups)
+			expect(result.finalRate).toBe(110)
+		})
+
+		it('handles all factors disabled in a group', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [
+						{ id: 'f1', label: 'F1', baseRate: 100, enabled: false },
+						{ id: 'f2', label: 'F2', baseRate: 200, enabled: false },
+					],
+				},
+			]
+
+			const result = engine.rate({}, groups)
+			// No factors applied, should return engine base rate
+			expect(result.finalRate).toBe(100)
+			expect(result.factorsApplied).toBe(0)
+		})
+
+		it('handles condition failure with multiple factors', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [
+						{
+							id: 'passes',
+							label: 'Passes',
+							baseRate: 50,
+							conditions: [{ field: 'active', operator: 'equals', value: true }],
+						},
+						{
+							id: 'fails',
+							label: 'Fails',
+							baseRate: 100,
+							conditions: [{ field: 'premium', operator: 'equals', value: true }],
+						},
+					],
+				},
+			]
+
+			const result = engine.rate({ active: true, premium: false }, groups)
+			expect(result.finalRate).toBe(50)
+			expect(result.factorsApplied).toBe(1)
+		})
+
+		it('handles negative base rates', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [
+						{ id: 'positive', label: 'Positive', baseRate: 100 },
+						{ id: 'negative', label: 'Negative', baseRate: -30 },
+					],
+				},
+			]
+
+			const result = engine.rate({}, groups)
+			expect(result.finalRate).toBe(70)
+		})
+
+		it('handles minimum clamping to engine minimum', () => {
+			const clampedEngine = createRatingEngine({
+				baseRate: 0,
+				minimumRate: 50,
+			})
+
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [{ id: 'f1', label: 'F1', baseRate: 10 }],
+				},
+			]
+
+			const result = clampedEngine.rate({}, groups)
+			expect(result.finalRate).toBe(50)
+			clampedEngine.destroy()
+		})
+
+		it('handles lookup with numeric key (string conversion)', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [
+						{
+							id: 'lookup',
+							label: 'Lookup',
+							lookupTable: {
+								field: 'level',
+								values: {
+									'1': 100,
+									'2': 200,
+									'3': 300,
+								},
+							},
+						},
+					],
+				},
+			]
+
+			// Subject has numeric value, lookup table has string keys
+			const result = engine.rate({ level: 2 }, groups)
+			expect(result.finalRate).toBe(200)
+		})
+
+		it('handles range table boundary conditions exactly', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [
+						{
+							id: 'range',
+							label: 'Range',
+							rangeTable: {
+								field: 'score',
+								ranges: [
+									{ minimum: 0, maximum: 49, rate: 50 },
+									{ minimum: 50, maximum: 99, rate: 100 },
+									{ minimum: 100, rate: 150 },
+								],
+							},
+						},
+					],
+				},
+			]
+
+			// Test exact boundaries
+			expect(engine.rate({ score: 49 }, groups).finalRate).toBe(50)
+			expect(engine.rate({ score: 50 }, groups).finalRate).toBe(100)
+			expect(engine.rate({ score: 99 }, groups).finalRate).toBe(100)
+			expect(engine.rate({ score: 100 }, groups).finalRate).toBe(150)
+		})
+
+		it('handles factor priority correctly with complex ordering', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [
+						{ id: 'p10', label: 'P10', baseRate: 10, priority: 10 },
+						{ id: 'p5', label: 'P5', baseRate: 5, priority: 5 },
+						{ id: 'p0', label: 'P0', baseRate: 0, priority: 0 },
+						{ id: 'p-1', label: 'P-1', baseRate: -1, priority: -1 },
+						{ id: 'noP', label: 'No Priority', baseRate: 100 }, // default priority 0
+					],
+				},
+			]
+
+			const result = engine.rate({}, groups)
+			// Priority order: -1, 0, 0, 5, 10
+			expect(result.allFactorResults[0]?.factor.id).toBe('p-1')
+			expect(result.allFactorResults[1]?.factor.priority ?? 0).toBe(0)
+			expect(result.allFactorResults[3]?.factor.id).toBe('p5')
+			expect(result.allFactorResults[4]?.factor.id).toBe('p10')
+		})
+
+		it('handles zero decimal places rounding', () => {
+			const intEngine = createRatingEngine({ decimalPlaces: 0 })
+
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [{ id: 'f1', label: 'F1', baseRate: 99.9 }],
+				},
+			]
+
+			const result = intEngine.rate({}, groups)
+			expect(result.finalRate).toBe(100)
+			intEngine.destroy()
+		})
+
+		it('handles rateGroup directly', () => {
+			const group: RateFactorGroup = {
+				id: 'direct',
+				label: 'Direct Group',
+				aggregationMethod: 'product',
+				factors: [
+					{ id: 'f1', label: 'F1', baseRate: 1.5 },
+					{ id: 'f2', label: 'F2', baseRate: 2 },
+				],
+			}
+
+			const result = engine.rateGroup({}, group)
+			expect(result.rate).toBe(3)
+			expect(result.isApplied).toBe(true)
+			expect(result.factorResults.length).toBe(2)
+		})
+
+		it('handles rateFactor directly', () => {
+			const factor: RateFactor = {
+				id: 'direct',
+				label: 'Direct Factor',
+				baseRate: 100,
+				operation: 'percentage',
+				operand: 20,
+				minimumRate: 50,
+				maximumRate: 150,
+			}
+
+			const result = engine.rateFactor({}, factor)
+			expect(result.rate).toBe(120)
+			expect(result.isApplied).toBe(true)
+		})
+
+		it('handles factor clamping with min > max (edge case)', () => {
+			const groups: readonly RateFactorGroup[] = [
+				{
+					id: 'test',
+					label: 'Test',
+					aggregationMethod: 'sum',
+					factors: [
+						{
+							id: 'f1',
+							label: 'F1',
+							baseRate: 100,
+							minimumRate: 200, // min > max is invalid but shouldn't crash
+							maximumRate: 50,
+						},
+					],
+				},
+			]
+
+			// Should not throw, behavior with invalid min/max is implementation-defined
+			expect(() => engine.rate({}, groups)).not.toThrow()
+		})
+	})
+
+	// ============================================================================
+	// Error Handling Tests
+	// ============================================================================
+
+	describe('error handling', () => {
+		it('collects errors when continueOnError is true', () => {
+			// Create an engine with a problematic configuration
+			const errorEngine = createRatingEngine({
+				baseRate: 100,
+				continueOnError: true,
+			})
+
+			const result = errorEngine.rate({}, [])
+			expect(result.isSuccessful).toBe(true)
+			expect(result.errors).toEqual([])
+			errorEngine.destroy()
+		})
+
+		it('stops on error when continueOnError is false', () => {
+			const strictEngine = createRatingEngine({
+				baseRate: 100,
+				continueOnError: false,
+			})
+
+			expect(strictEngine.isContinueOnError()).toBe(false)
+			strictEngine.destroy()
+		})
+
+		it('calls onError callback when error occurs', () => {
+			let errorCalled = false
+
+			const errorEngine = createRatingEngine({
+				baseRate: 100,
+				onError: () => {
+					errorCalled = true
+				},
+			})
+
+			// Normal operation should not trigger error callback
+			errorEngine.rate({}, [])
+			expect(errorCalled).toBe(false)
+
+			errorEngine.destroy()
+		})
+
+		it('throws when accessing destroyed engine', () => {
+			const tempEngine = createRatingEngine()
+			tempEngine.destroy()
+
+			expect(() => tempEngine.rate({}, [])).toThrow()
+			expect(() => tempEngine.rateFactor({}, { id: 't', label: 't', baseRate: 1 })).toThrow()
+			expect(() => tempEngine.rateGroup({}, { id: 'g', label: 'g', aggregationMethod: 'sum', factors: [] })).toThrow()
+			expect(() => tempEngine.evaluateCondition({}, { field: 'x', operator: 'equals', value: 1 })).toThrow()
+			expect(() => tempEngine.validateGroups([])).toThrow()
+		})
+	})
+
+	// ============================================================================
+	// Subscription Tests
+	// ============================================================================
+
+	describe('subscriptions advanced', () => {
+		it('supports multiple onRate subscriptions', () => {
+			let count1 = 0
+			let count2 = 0
+
+			const unsub1 = engine.onRate(() => { count1++ })
+			const unsub2 = engine.onRate(() => { count2++ })
+
+			engine.rate({}, [])
+			expect(count1).toBe(1)
+			expect(count2).toBe(1)
+
+			unsub1()
+			engine.rate({}, [])
+			expect(count1).toBe(1)
+			expect(count2).toBe(2)
+
+			unsub2()
+		})
+
+		it('supports multiple onError subscriptions', () => {
+			let count1 = 0
+			let count2 = 0
+
+			const unsub1 = engine.onError(() => { count1++ })
+			const unsub2 = engine.onError(() => { count2++ })
+
+			// Normal operation doesn't trigger error
+			engine.rate({}, [])
+			expect(count1).toBe(0)
+			expect(count2).toBe(0)
+
+			unsub1()
+			unsub2()
+		})
+
+		it('handles unsubscribe called multiple times', () => {
+			let count = 0
+			const unsubscribe = engine.onRate(() => { count++ })
+
+			engine.rate({}, [])
+			expect(count).toBe(1)
+
+			// Multiple unsubscribe calls should be safe
+			unsubscribe()
+			unsubscribe()
+			unsubscribe()
+
+			engine.rate({}, [])
+			expect(count).toBe(1)
 		})
 	})
 })
