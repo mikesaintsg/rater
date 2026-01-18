@@ -205,8 +205,9 @@ export class RatingEngine implements RatingEngineInterface {
 		}
 
 		// Evaluate conditions
+		let conditionResults: RateConditionResult[] | undefined
 		if (factor.conditions && factor.conditions.length > 0) {
-			const conditionResults = factor.conditions.map(c => this.evaluateCondition(subject, c))
+			conditionResults = factor.conditions.map(c => this.evaluateCondition(subject, c))
 
 			// All conditions must be met
 			const allMet = conditionResults.every(r => r.isMet)
@@ -218,27 +219,9 @@ export class RatingEngine implements RatingEngineInterface {
 					conditionResults,
 				}
 			}
-
-			// Determine base rate
-			let rate = this.#resolveFactorRate(subject, factor)
-
-			// Apply operation if specified
-			if (factor.operation && factor.operand !== undefined) {
-				rate = this.applyOperation(rate, factor.operation, factor.operand)
-			}
-
-			// Apply factor-level clamping
-			rate = clamp(rate, factor.minimumRate, factor.maximumRate)
-
-			return {
-				factor,
-				isApplied: true,
-				rate,
-				conditionResults,
-			}
 		}
 
-		// No conditions - Determine base rate
+		// Determine base rate
 		let rate = this.#resolveFactorRate(subject, factor)
 
 		// Apply operation if specified
@@ -248,6 +231,16 @@ export class RatingEngine implements RatingEngineInterface {
 
 		// Apply factor-level clamping
 		rate = clamp(rate, factor.minimumRate, factor.maximumRate)
+
+		// Return with or without conditionResults based on whether conditions exist
+		if (conditionResults !== undefined) {
+			return {
+				factor,
+				isApplied: true,
+				rate,
+				conditionResults,
+			}
+		}
 
 		return {
 			factor,
