@@ -1,8 +1,8 @@
 {
-	"name": "@mikesaintsg/vectorstore",
+	"name": "@mikesaintsg/rater",
 	"version": "0.0.1",
 	"type": "module",
-	"description": "Type-safe vectorstore with full TypeScript support. Zero runtime dependencies.",
+	"description": "Type-safe rater with full TypeScript support. Zero runtime dependencies.",
 	"keywords": [
 		"typescript",
 		"browser",
@@ -12,13 +12,13 @@
 	],
 	"author": "Mike Garcia",
 	"license": "MIT",
-	"homepage": "https://github.com/mikesaintsg/vectorstore#readme",
+	"homepage": "https://github.com/mikesaintsg/rater#readme",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/mikesaintsg/vectorstore.git"
+		"url": "https://github.com/mikesaintsg/rater.git"
 	},
 	"bugs": {
-		"url": "https://github.com/mikesaintsg/vectorstore/issues"
+		"url": "https://github.com/mikesaintsg/rater/issues"
 	},
 	"engines": {
 		"node": ">=18.0.0"
